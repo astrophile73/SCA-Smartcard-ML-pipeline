@@ -1,0 +1,58 @@
+# ============================================================
+# SCA Smartcard Pipeline — .gitignore
+# Only source code, reports, and docs go to GitHub.
+# Models, data, and generated artifacts are excluded.
+# ============================================================
+
+# === Models (will retrain from scratch) ===
+models/
+*.keras
+*.pth
+*.h5
+models.7z
+models.zip
+models_minimal.*
+
+# === Input trace data (share via cloud drive) ===
+Input/
+Input1/
+GreenVisa/
+
+# === Generated / intermediate data ===
+Processed/
+Processed_*/
+Optimization/
+Output/
+output-*/
+results/
+results_*/
+*.tar
+
+# === Legacy nested repo (source of Visa poison bug) ===
+SCA-Smartcard-ML-Pipeline/
+SCA-Smartcard-ML-Pipeline.zip.*
+
+# === Python cache ===
+__pycache__/
+*.pyc
+*.pyo
+src/__pycache__/
+
+# === IDE / editor / temp ===
+.qodo/
+.vscode/
+.idea/
+__timing_tmp/
+*.bak
+*.log
+
+# === Large log exports / one-off text dumps ===
+12jan-20feb.txt
+LogExport_*.txt
+LogExport_*.docx
+validation_error.log
+
+# === OS files ===
+Thumbs.db
+.DS_Store
+desktop.ini
