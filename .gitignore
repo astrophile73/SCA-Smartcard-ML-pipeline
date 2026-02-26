@@ -14,15 +14,19 @@ models.zip
 models_minimal.*
 
 # === Input trace data (share via cloud drive) ===
-Input/
+Input/*
+!Input/.gitkeep
 Input1/
 GreenVisa/
 
 # === Generated / intermediate data ===
-Processed/
+Processed/*
+!Processed/.gitkeep
 Processed_*/
-Optimization/
-Output/
+Optimization/*
+!Optimization/.gitkeep
+Output/*
+!Output/.gitkeep
 output-*/
 results/
 results_*/
