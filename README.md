@@ -200,15 +200,89 @@ RSA_CRT_P, RSA_CRT_Q, RSA_CRT_DP, RSA_CRT_DQ, RSA_CRT_QINV
 
 ---
 
+## External Implementations & Repos
+
+### 3DES Pipeline
+
+| Source | Repo / Link | Used In | Purpose |
+|---|---|---|---|
+| **pyDes** (Todd Whiteman) | [BlackRabbit fork (Gist)](https://gist.github.com/BlackRabbit-github/2924939) / [Original](http://twhiteman.netfirms.com/des.html) | `src/pyDes.py` | Pure-Python DES/3DES engine — provides encrypt/decrypt, key schedule generation, S-Box tables, and all permutation tables (PC1, PC2, IP, E, P). **The entire crypto foundation of this pipeline.** |
+| **ASCAD** (ANSSI-FR) | [github.com/ANSSI-FR/ASCAD](https://github.com/ANSSI-FR/ASCAD) | `src/model.py` | CNN architecture for side-channel analysis (legacy model, adapted from AES to 3DES with 16 output classes instead of 256) |
+| **ZaidNet** (Zaid et al.) | [github.com/gabzai/Methodology-for-efficient-CNN-architectures-in-SCA](https://github.com/gabzai/Methodology-for-efficient-CNN-architectures-in-SCA) | `src/model_zaid.py` | **Primary model architecture** — lightweight CNN optimized for SCA (TCHES 2020 paper). Conv1D → BN → AvgPool → FC → 16-class softmax |
+| **DES S-Box tables** | NIST FIPS 46-3 (via pyDes) | `src/crypto.py`, `src/gen_labels.py` | All 8 S-Box lookup tables, Initial Permutation (IP), Expansion (E), PC1, PC2 — copied directly from pyDes |
+| **DES Key Schedule** | NIST FIPS 46-3 (via pyDes) | `src/crypto.py` | Round key generation: PC1 → left-rotate → PC2 → 48-bit round key. Also inverse PC1/PC2 for key reconstruction from recovered round keys |
+
+### RSA Pipeline
+
+| Source | Repo / Link | Used In | Purpose |
+|---|---|---|---|
+| **rsatool** logic | [github.com/ius/rsatool](https://github.com/ius/rsatool) | `src/crypto.py` → `derive_rsa_crt()`, `src/inference_rsa.py` | CRT parameter derivation: given P and Q, computes N, d, DP, DQ, QINV. Tries e=3 first, then e=65537. Used for post-prediction consistency verification |
+| **PyCryptodome** | [pypi.org/project/pycryptodome](https://pypi.org/project/pycryptodome/) | `src/inference_rsa.py` | `Crypto.Util.number.bytes_to_long` / `long_to_bytes` — integer ↔ bytes conversion for RSA math |
+| **RSA Model** (custom) | — (no external repo) | `src/model_rsa.py` | Multi-head FC network: shared feature extractor → 128 separate byte classifiers (each 256-class). **Custom design, not based on any published architecture** |
+
+### How They Fit Together
+
+```
+TRACE DATA (NPZ)
+    │
+    ▼
+┌─────────────────────────────────────────────────┐
+│ 3DES PIPELINE                                   │
+│                                                 │
+│ pyDes (BlackRabbit) ──► S-Box tables, PC1/PC2   │
+│                         key schedule, DES enc   │
+│                                                 │
+│ gen_labels.py ──► uses pyDes S-Boxes to compute │
+│                  training labels (S-Box outputs) │
+│                                                 │
+│ model_zaid.py ──► ZaidNet CNN (from gabzai repo) │
+│ model.py ──────► ASCAD CNN (from ANSSI-FR repo)  │
+│                  (legacy, not primary)           │
+│                                                 │
+│ crypto.py ──► inverse PC1/PC2 (from pyDes) to   │
+│               reconstruct key from round key    │
+└─────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────┐
+│ RSA PIPELINE                                    │
+│                                                 │
+│ model_rsa.py ──► Custom multi-head FC model     │
+│                  (no external source)            │
+│                                                 │
+│ inference_rsa.py ──► PyCryptodome for int<->bytes│
+│                                                 │
+│ crypto.py ──► rsatool logic for CRT derivation  │
+│               (P,Q) → (N, d, DP, DQ, QINV)     │
+└─────────────────────────────────────────────────┘
+```
+
+### pip Dependencies
+
+| Package | Why |
+|---|---|
+| `torch` | PyTorch — all models (ZaidNet, ASCAD, RSA) |
+| `numpy` | Trace arrays, feature matrices |
+| `pandas` | Metadata CSV, output reports |
+| `scipy` | FFT cross-correlation for trace alignment |
+| `scikit-learn` | GroupShuffleSplit for train/val split |
+| `pycryptodome` | `Crypto.Util.number` for RSA integer math |
+| `tqdm` | Progress bars |
+| `openpyxl` | Excel output |
+| `rich` | Pretty console logging |
+
+---
+
 ## References
 
 | Reference | Used For |
 |---|---|
-| Zaid et al., TCHES 2020 | ZaidNet CNN architecture |
+| Zaid et al., "Methodology for efficient CNN architectures in profiling attacks", TCHES 2020 | ZaidNet model architecture |
+| Prouff et al., "Study of Deep Learning Techniques for SCA", IACR ePrint 2018/053 | ASCAD model architecture |
 | NIST FIPS 46-3 | DES S-Box tables, permutation tables |
 | EMV Book 2 | Session key derivation, APDU parsing |
-| Kocher et al., CRYPTO 1999 | Differential Power Analysis theory |
+| Kocher et al., "Differential Power Analysis", CRYPTO 1999 | DPA/CPA theory |
 | ISO/IEC 7816-4 | APDU command format |
+| rsatool (ius/rsatool) | RSA CRT parameter derivation |
 
 ---
 
