@@ -5,7 +5,8 @@
 # ============================================================
 
 # === Models (will retrain from scratch) ===
-models/
+models/*
+!models/.gitkeep
 *.keras
 *.pth
 *.h5
