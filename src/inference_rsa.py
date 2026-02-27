@@ -1,6 +1,8 @@
 """
 RSA Inference - Attack RSA keys from power traces
 """
+import logging
+
 import torch
 import numpy as np
 import pandas as pd
@@ -11,7 +13,8 @@ warnings.filterwarnings('ignore', category=FutureWarning)
 from src.utils import setup_logger
 logger = setup_logger("inference_rsa")
 from src.model_rsa import create_rsa_model
-from Crypto.Util.number import bytes_to_long, long_to_bytes
+#from Crypto.Util.number import bytes_to_long, long_to_bytes
+from Cryptodome.Util.number import bytes_to_long, long_to_bytes
 from src.crypto import derive_rsa_crt
 
 def perform_rsa_attack(features_path, meta_path, model_dir, component_name):

@@ -7,38 +7,89 @@ Focus on generalization through Z-Score normalization.
 
 import numpy as np
 from pathlib import Path
-from typing import Tuple, List, Dict
+from typing import Tuple, List, Dict, Union
 from sklearn.model_selection import train_test_split
 
 
 class DataLoader:
     """Load and preprocess 3DES power traces from Mastercard dataset."""
     
-    def __init__(self, data_dir: str = "Input/Mastercard"):
+    def __init__(
+        self,
+        data_dir: Union[str, List[str]] = None,
+        mode: str = "3des"
+    ):
         """
         Initialize data loader.
         
         Args:
-            data_dir: Directory containing NPZ files
+            data_dir: Directory or list of directories containing NPZ files.
+                     If None, scans both Mastercard and Visa folders.
+            mode: File selection mode.
+                  - "3des": keep only files containing 3DES keys
+                  - "rsa": keep only files containing RSA I/O fields
+                  - "all": keep all NPZ files matching pattern
         """
-        self.data_dir = Path(data_dir)
-        # Only load 3DES trace files (exclude RSA and white card files)
-        all_npz_files = sorted(self.data_dir.glob("traces_data_*.npz"))
-        filtered_files = [
-            f for f in all_npz_files 
-            if 'rsa' not in f.name.lower() and 'white' not in f.name.lower()
-        ]
+        if data_dir is None:
+            self.data_dirs = [Path("Input/MasterCard"), Path("Input/Visa")]
+        elif isinstance(data_dir, (list, tuple)):
+            self.data_dirs = [Path(d) for d in data_dir]
+        else:
+            self.data_dirs = [Path(data_dir)]
+        
+        self.mode = mode.lower()
+        if self.mode not in {"3des", "rsa", "all"}:
+            raise ValueError("mode must be one of: '3des', 'rsa', 'all'")
+        
+        all_npz_files: List[Path] = []
+        for directory in self.data_dirs:
+            all_npz_files.extend(sorted(directory.glob("traces_data_*.npz")))
+        
+        # De-duplicate while preserving deterministic order
+        all_npz_files = sorted(set(all_npz_files), key=lambda p: str(p).lower())
+        
+        filtered_files = self._filter_by_mode(all_npz_files)
         
         # Limit to first 4 files (7000 traces) to avoid memory issues
         # Skip the large 3000T_5.npz file that causes memory allocation errors
-        self.npz_files = filtered_files[:4]  # Only load 1000T + 2000T + 2000T + 2000T = 7000 traces
-        
+       # self.npz_files = filtered_files[:4]  # Only load 1000T + 2000T + 2000T + 2000T = 7000 traces
+        self.npz_files = filtered_files
         if not self.npz_files:
-            raise FileNotFoundError(f"No NPZ files found in {data_dir}")
+            searched = ", ".join(str(d) for d in self.data_dirs)
+            raise FileNotFoundError(
+                f"No NPZ files found for mode '{self.mode}' in: {searched}"
+            )
         
         print(f"Found {len(self.npz_files)} NPZ files:")
         for f in self.npz_files:
             print(f"  - {f.name}")
+
+    def _filter_by_mode(self, files: List[Path]) -> List[Path]:
+        """Filter files based on actual NPZ keys rather than filename heuristics."""
+        if self.mode == "all":
+            return files
+        
+        selected = []
+        for f in files:
+            try:
+                with np.load(f, mmap_mode="r") as data:
+                    keys = set(data.files)
+            except Exception:
+                # Skip unreadable/corrupt files
+                continue
+            
+            if self.mode == "3des":
+                # 3DES training files contain DES key fields + ATC
+                required = {"T_DES_KENC", "T_DES_KMAC", "T_DES_KDEK", "trace_data"}
+                if required.issubset(keys) and "white" not in f.name.lower():
+                    selected.append(f)
+            elif self.mode == "rsa":
+                # RSA files contain ACR send/receive metadata
+                required = {"ACR_send", "ACR_receive", "trace_data"}
+                if required.issubset(keys):
+                    selected.append(f)
+        
+        return selected
     
     def trace_generator(self):
         """Generator that yields one trace at a time for memory-efficient processing."""

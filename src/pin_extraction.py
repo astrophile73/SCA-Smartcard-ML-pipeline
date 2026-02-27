@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import binascii
-from Crypto.Cipher import DES3
+from Cryptodome.Cipher import DES3
 from src.utils import setup_logger
 from src.crypto import derive_rsa_crt
 

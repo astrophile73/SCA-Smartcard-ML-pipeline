@@ -13,6 +13,7 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import time
 import shutil
+from typing import Union, List
 
 import tensorflow as tf
 from data_loader import DataLoader
@@ -25,7 +26,7 @@ class Trainer:
     
     def __init__(
         self,
-        data_dir: str = "Input/Mastercard",
+        data_dir: Union[str, List[str], None] = None,
         models_dir: str = "models",
         results_dir: str = "results",
         force_train: bool = False
@@ -34,12 +35,16 @@ class Trainer:
         Initialize trainer.
         
         Args:
-            data_dir: Directory containing NPZ files
+            data_dir: Directory or list of directories containing NPZ files.
+                      If None, scans both Input/MasterCard and Input/Visa.
             models_dir: Directory to save trained models
             results_dir: Directory to save training results
             force_train: Whether to overwrite existing models
         """
-        self.data_dir = data_dir
+        if data_dir is None:
+            self.data_dir = ["Input/MasterCard", "Input/Visa"]
+        else:
+            self.data_dir = data_dir
         self.models_dir = Path(models_dir)
         self.results_dir = Path(results_dir)
         self.force_train = force_train
@@ -49,7 +54,9 @@ class Trainer:
         self.results_dir.mkdir(exist_ok=True)
         
         # Initialize components
-        self.data_loader = DataLoader(data_dir)
+        # Keep current training pipeline in 3DES mode.
+        # This scans both folders but only keeps files with 3DES keys.
+        self.data_loader = DataLoader(self.data_dir, mode="3des")
         self.label_generator = LabelGenerator()
         self.model_builder = None  # Will be initialized after loading data
         
@@ -92,19 +99,56 @@ class Trainer:
         X_train, X_val, y_train, y_val = self.data_loader.train_val_split(
             X_all, y_all_raw, test_size=0.2, random_state=42
         )
+        
+        # ================================
+        # FIX: Extract per-trace plaintext (ATC)
+        # ================================
+        
+        plaintexts_train = [
+            bytes.fromhex(atc.zfill(16))
+            for atc in y_train['ATC']   # <-- change 'ATC' if your column name differs
+        ]
+        
+        plaintexts_val = [
+            bytes.fromhex(atc.zfill(16))
+            for atc in y_val['ATC']
+        ]
+        
+        # Safety check
+        assert len(plaintexts_train) == len(X_train)
+        assert len(plaintexts_val) == len(X_val)
+
         del X_all
         gc.collect()
         
         self.model_builder = ModelBuilder(trace_length=len(poi_indices))
         
         print(f"\nSTEP 3: Label Generation (Stage {stage})")
-        all_train_labels = self.label_generator.generate_labels_for_all_keys(
-            y_train['KENC'], y_train['KMAC'], y_train['KDEK'], stage=stage
-        )
-        all_val_labels = self.label_generator.generate_labels_for_all_keys(
-            y_val['KENC'], y_val['KMAC'], y_val['KDEK'], stage=stage
-        )
+        # all_train_labels = self.label_generator.generate_labels_for_all_keys(
+        #     y_train['KENC'], y_train['KMAC'], y_train['KDEK'], stage=stage
+        # )
+        # all_val_labels = self.label_generator.generate_labels_for_all_keys(
+        #     y_val['KENC'], y_val['KMAC'], y_val['KDEK'], stage=stage
+        # )
         
+        # ======================================
+        # FIX: Pass plaintexts into label generator
+        # ======================================
+        all_train_labels = self.label_generator.generate_labels_for_all_keys(
+            y_train['KENC'],
+            y_train['KMAC'],
+            y_train['KDEK'],
+            plaintexts=plaintexts_train,
+            stage=stage
+        )
+
+        all_val_labels = self.label_generator.generate_labels_for_all_keys(
+            y_val['KENC'],
+            y_val['KMAC'],
+            y_val['KDEK'],
+            plaintexts=plaintexts_val,
+            stage=stage
+        )
         train_labels_cat = {}
         val_labels_cat = {}
         for key_type in ['KENC', 'KMAC', 'KDEK']:

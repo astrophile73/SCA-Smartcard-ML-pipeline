@@ -66,34 +66,60 @@ class POISelector:
         
         return traces[:, self.poi_indices]
     
-    def fit_incremental(self, trace_gen):
-        """
-        Calculate variance incrementally (Welford's algorithm) using a trace generator.
-        This is extremely memory-efficient.
-        """
-        print(f"\nDiscovering POIs incrementally...")
-        n = 0
-        mean = None
-        M2 = None
+    # def fit_incremental(self, trace_gen):
+    #     """
+    #     Calculate variance incrementally (Welford's algorithm) using a trace generator.
+    #     This is extremely memory-efficient.
+    #     """
+    #     print(f"\nDiscovering POIs incrementally...")
+    #     n = 0
+    #     mean = None
+    #     M2 = None
         
-        for trace in trace_gen:
-            n += 1
-            if mean is None:
-                mean = np.zeros_like(trace)
-                M2 = np.zeros_like(trace)
+    #     for trace in trace_gen:
+    #         n += 1
+    #         if mean is None:
+    #             mean = np.zeros_like(trace)
+    #             M2 = np.zeros_like(trace)
             
-            delta = trace - mean
-            mean += delta / n
-            delta2 = trace - mean
-            M2 += delta * delta2
+    #         delta = trace - mean
+    #         mean += delta / n
+    #         delta2 = trace - mean
+    #         M2 += delta * delta2
             
-            if n % 1000 == 0:
-                print(f"  Processed {n} traces...")
+    #         if n % 1000 == 0:
+    #             print(f"  Processed {n} traces...")
         
-        variances = M2 / n
-        self.poi_indices = np.argsort(variances)[-self.num_poi:]
+    #     variances = M2 / n
+    #     self.poi_indices = np.argsort(variances)[-self.num_poi:]
+    #     self.poi_indices = np.sort(self.poi_indices)
+    #     print(f"✓ POI discovery complete ({n} traces processed)")
+    #     return self.poi_indices
+    def fit_incremental_snr(self, trace_label_gen, num_classes=16):
+        """SNR-based POI: group traces by label, compute per-class mean, then variance of means."""
+        from collections import defaultdict
+        class_sums   = defaultdict(lambda: None)
+        class_sq_sums = defaultdict(lambda: None)
+        class_counts = defaultdict(int)
+        for trace, label in trace_label_gen:   # yields (1-D trace, int label 0-15)
+            lbl = int(label)
+            class_counts[lbl] += 1
+            if class_sums[lbl] is None:
+                class_sums[lbl]    = trace.copy().astype(np.float64)
+                class_sq_sums[lbl] = (trace**2).astype(np.float64)
+            else:
+                class_sums[lbl]    += trace
+                class_sq_sums[lbl] += trace**2
+        # Per-class mean and variance
+        means = np.array([class_sums[c] / class_counts[c] for c in range(num_classes)])
+        signal = np.var(means, axis=0)          # variance of class means (signal)
+        noise  = np.mean([                      # mean of within-class variances (noise)
+            class_sq_sums[c]/class_counts[c] - (class_sums[c]/class_counts[c])**2
+            for c in range(num_classes)
+        ], axis=0)
+        snr = signal / (noise + 1e-12)
+        self.poi_indices = np.argsort(snr)[-self.num_poi:]
         self.poi_indices = np.sort(self.poi_indices)
-        print(f"✓ POI discovery complete ({n} traces processed)")
         return self.poi_indices
 
     def fit_transform(self, traces: np.ndarray, labels: np.ndarray = None) -> np.ndarray:

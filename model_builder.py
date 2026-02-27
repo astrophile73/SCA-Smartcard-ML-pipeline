@@ -32,8 +32,8 @@ class ModelBuilder:
         filters_2: int = 128,
         kernel_size: int = 11,
         dense_units: int = 256,
-        l2_weight: float = 1e-2,
-        dropout_rate: float = 0.5
+        l2_weight: float = 1e-5,
+        dropout_rate: float = 0.25
     ) -> keras.Model:
         """
         Build CNN model for single S-Box prediction.

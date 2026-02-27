@@ -102,80 +102,166 @@ class LabelGenerator:
         
         return self.sbox[sbox_idx][row][col]
     
+    # def generate_sbox_labels_for_key(
+    #     self, 
+    #     key_hex: str, 
+    #     plaintext: bytes = None
+    # ) -> np.ndarray:
+    #     """Stage 1 Labels (K1)."""
+    #     from des_crypto import DES
+    #     key_bytes = self.hex_to_bytes(key_hex)
+    #     if plaintext is None: plaintext = b'\x00' * 8
+    #     des_key = key_bytes[:8]
+    #     des = DES(des_key)
+    #     return des.get_first_round_sbox_outputs(plaintext)
+
     def generate_sbox_labels_for_key(
         self, 
         key_hex: str, 
-        plaintext: bytes = None
+        plaintext: bytes
     ) -> np.ndarray:
         """Stage 1 Labels (K1)."""
         from des_crypto import DES
+        if plaintext is None:
+            raise ValueError("Plaintext must be provided per trace. It cannot be None.")
         key_bytes = self.hex_to_bytes(key_hex)
-        if plaintext is None: plaintext = b'\x00' * 8
+        # 3DES K1
         des_key = key_bytes[:8]
         des = DES(des_key)
         return des.get_first_round_sbox_outputs(plaintext)
 
+    # def generate_stage2_labels_for_key(
+    #     self,
+    #     key_hex: str,
+    #     plaintext: bytes = None
+    # ) -> np.ndarray:
+    #     """
+    #     Stage 2 Labels (K2).
+        
+    #     Calculates C1 = DES_Enc(K1, P), then targets DES_Dec(K2, C1).
+    #     """
+    #     from des_crypto import DES
+    #     key_bytes = self.hex_to_bytes(key_hex)
+    #     #if plaintext is None: plaintext = b'\x00' * 8
+        
+    #     # 1. Recover K1 and K2
+    #     k1_bytes = key_bytes[:8]
+    #     k2_bytes = key_bytes[8:16]
+        
+    #     # 2. Calculate Intermediate State C1
+    #     des1 = DES(k1_bytes)
+    #     c1 = des1.encrypt(plaintext)
+        
+    #     # 3. Target Stage 2 S-Boxes
+    #     des2 = DES(k2_bytes)
+    #     return des2.get_stage2_sbox_outputs(c1)
+
     def generate_stage2_labels_for_key(
         self,
         key_hex: str,
-        plaintext: bytes = None
+        plaintext: bytes
     ) -> np.ndarray:
-        """
-        Stage 2 Labels (K2).
-        
-        Calculates C1 = DES_Enc(K1, P), then targets DES_Dec(K2, C1).
-        """
+        """Stage 2 Labels (K2).Calculates C1 = DES_Enc(K1, P), then targets DES_Dec(K2, C1)."""
         from des_crypto import DES
+
+        if plaintext is None:
+            raise ValueError("Plaintext must be provided per trace for Stage 2.")
+
         key_bytes = self.hex_to_bytes(key_hex)
-        if plaintext is None: plaintext = b'\x00' * 8
-        
-        # 1. Recover K1 and K2
+
+        # Recover K1 and K2
         k1_bytes = key_bytes[:8]
         k2_bytes = key_bytes[8:16]
-        
-        # 2. Calculate Intermediate State C1
+
+        # Intermediate state C1 = DES_Enc(K1, P)
         des1 = DES(k1_bytes)
         c1 = des1.encrypt(plaintext)
-        
-        # 3. Target Stage 2 S-Boxes
+
+        # Target Stage 2 S-Boxes (DES_Dec(K2, C1))
         des2 = DES(k2_bytes)
+
         return des2.get_stage2_sbox_outputs(c1)
     
     def generate_labels_for_dataset(
         self,
         keys: np.ndarray,
+        plaintexts: np.ndarray,
         key_type: str = 'KENC',
         stage: int = 1
     ) -> np.ndarray:
         """Generate S-Box labels for entire dataset for a specific stage."""
         print(f"\nGenerating Stage {stage} S-Box labels for {key_type}...")
         all_labels = []
-        for key_hex in keys:
-            if stage == 1:
-                labels = self.generate_sbox_labels_for_key(key_hex)
+        for key_hex, pt in zip(keys, plaintexts):
+            if isinstance(pt, str):
+                pt_bytes = bytes.fromhex(pt.zfill(16))
             else:
-                labels = self.generate_stage2_labels_for_key(key_hex)
+                pt_bytes = pt
+
+            if stage == 1:
+                labels = self.generate_sbox_labels_for_key(
+                    key_hex,
+                    plaintext=pt_bytes
+                )
+            else:
+                labels = self.generate_stage2_labels_for_key(
+                    key_hex,
+                    plaintext=pt_bytes
+                )
             all_labels.append(labels)
+
         return np.array(all_labels)
     
+    # def generate_labels_for_all_keys(
+    #     self,
+    #     kenc_keys: np.ndarray,
+    #     kmac_keys: np.ndarray,
+    #     kdek_keys: np.ndarray,
+    #     stage: int = 1
+    # ) -> dict:
+    #     """Generate S-Box labels for all 3 keys for a specific stage."""
+    #     print("\n" + "=" * 60)
+    #     print(f"Generating Stage {stage} Labels (Proper DES)")
+    #     print("=" * 60)
+        
+    #     return {
+    #         'KENC': self.generate_labels_for_dataset(kenc_keys, 'KENC', stage),
+    #         'KMAC': self.generate_labels_for_dataset(kmac_keys, 'KMAC', stage),
+    #         'KDEK': self.generate_labels_for_dataset(kdek_keys, 'KDEK', stage)
+    #     }
     def generate_labels_for_all_keys(
         self,
         kenc_keys: np.ndarray,
         kmac_keys: np.ndarray,
         kdek_keys: np.ndarray,
+        plaintexts: np.ndarray,   # ← ADDED
         stage: int = 1
     ) -> dict:
         """Generate S-Box labels for all 3 keys for a specific stage."""
         print("\n" + "=" * 60)
         print(f"Generating Stage {stage} Labels (Proper DES)")
         print("=" * 60)
-        
+
         return {
-            'KENC': self.generate_labels_for_dataset(kenc_keys, 'KENC', stage),
-            'KMAC': self.generate_labels_for_dataset(kmac_keys, 'KMAC', stage),
-            'KDEK': self.generate_labels_for_dataset(kdek_keys, 'KDEK', stage)
-        }
-    
+            'KENC': self.generate_labels_for_dataset(
+                kenc_keys,
+                plaintexts,              # ← PASS PLAINTEXTS
+                key_type='KENC',
+                stage=stage
+            ),
+        'KMAC': self.generate_labels_for_dataset(
+            kmac_keys,
+            plaintexts,              # ← PASS PLAINTEXTS
+            key_type='KMAC',
+            stage=stage
+        ),
+        'KDEK': self.generate_labels_for_dataset(
+            kdek_keys,
+            plaintexts,              # ← PASS PLAINTEXTS
+            key_type='KDEK',
+            stage=stage
+        )
+    }
     def labels_to_categorical(self, labels: np.ndarray) -> List[np.ndarray]:
         """
         Convert S-Box labels to categorical format for training.
@@ -186,8 +272,7 @@ class LabelGenerator:
         Returns:
             List of 8 arrays, each of shape (N, 16) for categorical training
         """
-        from tensorflow.keras.utils import to_categorical
-        
+        import tensorflow as tf
         categorical_labels = []
         
         for sbox_idx in range(8):
@@ -195,7 +280,7 @@ class LabelGenerator:
             sbox_labels = labels[:, sbox_idx]
             
             # Convert to categorical (one-hot encoding)
-            categorical = to_categorical(sbox_labels, num_classes=16)
+            categorical = tf.keras.utils.to_categorical(sbox_labels, num_classes=16)
             categorical_labels.append(categorical)
         
         print(f"\n[OK] Converted to categorical format:")
